@@ -1,15 +1,20 @@
 from rest_framework import viewsets
-from rest_framework.generics import CreateAPIView, ListAPIView, RetrieveAPIView, UpdateAPIView, DestroyAPIView
+from rest_framework.generics import CreateAPIView, ListAPIView, RetrieveAPIView, UpdateAPIView, DestroyAPIView, \
+    get_object_or_404
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from lms.models import Course, Lesson
+from lms.models import Course, Lesson, Subscription
+from lms.paginators import LMSPagination
 from lms.permissions import IsModerator, IsOwner
-from lms.serializers import CourseSerializer, LessonSerializer
+from lms.serializers import CourseSerializer, LessonSerializer, SubscriptionSerializer
 
 
 class CourseViewsSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
+    permission_class = LMSPagination
 
     def perform_create(self, serializer):
         lesson = serializer.save()
@@ -17,7 +22,7 @@ class CourseViewsSet(viewsets.ModelViewSet):
         lesson.save()
 
     def get_queryset(self):
-        if IsModerator().has_permission(self.request,self):
+        if IsModerator().has_permission(self.request, self):
             return Course.objects.all()
         else:
             return Course.objects.filter(owner=self.request.user)
@@ -46,6 +51,7 @@ class LessonListAPIView(ListAPIView):
     serializer_class = LessonSerializer
     queryset = Lesson.objects.all()
     permission_classes = [IsAuthenticated]
+    permission_class = LMSPagination
 
     def get_queryset(self):
         if IsModerator().has_permission(self.request,self):
@@ -70,3 +76,21 @@ class LessonDestroyAPIView(DestroyAPIView):
     serializer_class = LessonSerializer
     queryset = Lesson.objects.all()
     permission_classes = [~IsModerator | IsOwner]
+
+
+class SubscriptionCreateAPIView(CreateAPIView):
+    serializer_class = SubscriptionSerializer
+
+    def post(self, *args, **kwargs):
+        user = self.request.user
+        course_id = self.request.data.get('course')
+        course_item = get_object_or_404(Course, pk=course_id)
+
+        subscription, created = Subscription.objects.get_or_create(user=user, course=course_item)
+        if not created:
+            subscription.delete()
+            message = 'подписка удалена'
+        else:
+            message = 'подписка добавлена'
+
+        return Response({'message': message})
